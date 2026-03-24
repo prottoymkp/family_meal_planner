@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  .badge {
+    @apply inline-block px-2 py-0.5 rounded-full text-[11px] font-medium;
+  }
+  .badge-diabetic { background: #EEEDFE; color: #3C3489; }
+  .badge-general  { background: #E1F5EE; color: #085041; }
+  .badge-teen     { background: #FAEEDA; color: #633806; }
+  .badge-kid      { background: #FAECE7; color: #712B13; }
+  .badge-picky    { background: #FBEAF0; color: #72243E; }
+  .badge-daily    { background: #E6F1FB; color: #0C447C; }
+  .badge-weekly   { background: #FAEEDA; color: #633806; }
+
+  .card {
+    @apply bg-white rounded-xl border border-gray-200 p-3;
+    border-width: 0.5px;
+  }
+
+  .meal-card {
+    @apply card mb-2.5;
+  }
+
+  .picky-modifier {
+    @apply text-[11px] text-gray-500 pl-2 mt-1.5 border-l-2 border-pink-300;
+  }
+
+  .day-chip {
+    @apply px-3 py-2 rounded-lg text-center min-w-[52px] cursor-pointer
+           bg-white border border-gray-200 text-gray-500 select-none;
+    border-width: 0.5px;
+    transition: all 0.15s;
+  }
+  .day-chip.active {
+    background-color: #0F6E56; color: #fff; border-color: #0F6E56;
+  }
+
+  .filter-pill {
+    @apply px-3.5 py-1.5 rounded-full text-xs font-medium cursor-pointer
+           bg-white border border-gray-200 text-gray-500 select-none;
+    border-width: 0.5px;
+    transition: all 0.15s;
+  }
+  .filter-pill.active {
+    background-color: #0F6E56; color: #fff; border-color: #0F6E56;
+  }
+
+  .check-box {
+    @apply w-5 h-5 rounded-md border-[1.5px] border-gray-300 flex-shrink-0
+           flex items-center justify-center cursor-pointer bg-white;
+    transition: all 0.15s;
+  }
+  .check-box.checked {
+    background-color: #0F6E56; border-color: #0F6E56;
+  }
+
+  .kitchen-task {
+    @apply flex gap-3 items-start p-3 mb-2 bg-white rounded-lg border border-gray-200;
+    border-width: 0.5px;
+  }
+
+  .stat-card {
+    @apply bg-gray-100 rounded-lg p-2.5 text-center;
+  }
+
+  .skeleton {
+    @apply bg-gray-200 rounded animate-pulse;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  body                { background-color: #030712; color: #f3f4f6; }
+  .card, .meal-card   { background-color: #111827; border-color: #1f2937; }
+  .day-chip           { background-color: #111827; border-color: #1f2937; color: #9ca3af; }
+  .day-chip.active    { background-color: #0F6E56; color: #fff; border-color: #0F6E56; }
+  .filter-pill        { background-color: #111827; border-color: #1f2937; color: #9ca3af; }
+  .filter-pill.active { background-color: #0F6E56; color: #fff; border-color: #0F6E56; }
+  .check-box          { background-color: #111827; border-color: #4b5563; }
+  .check-box.checked  { background-color: #0F6E56; border-color: #0F6E56; }
+  .kitchen-task       { background-color: #111827; border-color: #1f2937; }
+  .stat-card          { background-color: #111827; }
+  .skeleton           { background-color: #1f2937; }
+  .badge-diabetic     { background: #26215C; color: #CECBF6; }
+  .badge-general      { background: #04342C; color: #9FE1CB; }
+  .badge-teen         { background: #412402; color: #FAC775; }
+  .badge-kid          { background: #4A1B0C; color: #F5C4B3; }
+  .badge-picky        { background: #4B1528; color: #F4C0D1; }
+  .badge-daily        { background: #042C53; color: #B5D4F4; }
+  .badge-weekly       { background: #412402; color: #FAC775; }
+}
