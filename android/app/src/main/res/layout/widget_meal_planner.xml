@@ -4,8 +4,8 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#0F6E56"
-    android:padding="12dp">
+    android:background="#1A1A2E"
+    android:padding="14dp">
 
     <!-- Header -->
     <LinearLayout
@@ -13,16 +13,16 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:layout_marginBottom="8dp">
+        android:layout_marginBottom="10dp">
 
         <TextView
             android:id="@+id/widget_title"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Today's Meals"
+            android:text="🍽️ Today's Meals"
             android:textColor="#FFFFFF"
-            android:textSize="14sp"
+            android:textSize="15sp"
             android:textStyle="bold" />
 
         <TextView
@@ -30,32 +30,24 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text=""
-            android:textColor="#B2DFDB"
-            android:textSize="11sp" />
+            android:textColor="#9E9EB8"
+            android:textSize="12sp" />
     </LinearLayout>
-
-    <!-- Divider (using TextView because View is not allowed in RemoteViews) -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="#2E7D6B"
-        android:layout_marginBottom="8dp"/>
 
     <!-- Breakfast -->
     <LinearLayout
-        android:id="@+id/row_breakfast"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginBottom="5dp"
+        android:layout_marginBottom="6dp"
         android:gravity="center_vertical">
 
         <TextView
-            android:layout_width="60dp"
+            android:layout_width="28dp"
             android:layout_height="wrap_content"
-            android:text="🌅 BF"
-            android:textColor="#80CBC4"
-            android:textSize="10sp"/>
+            android:text="🌅"
+            android:textSize="14sp"
+            android:gravity="center"/>
 
         <TextView
             android:id="@+id/widget_breakfast"
@@ -63,27 +55,27 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="—"
-            android:textColor="#FFFFFF"
-            android:textSize="11sp"
+            android:textColor="#E8E8F0"
+            android:textSize="13sp"
             android:maxLines="1"
-            android:ellipsize="end"/>
+            android:ellipsize="end"
+            android:layout_marginStart="6dp"/>
     </LinearLayout>
 
     <!-- Lunch -->
     <LinearLayout
-        android:id="@+id/row_lunch"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginBottom="5dp"
+        android:layout_marginBottom="6dp"
         android:gravity="center_vertical">
 
         <TextView
-            android:layout_width="60dp"
+            android:layout_width="28dp"
             android:layout_height="wrap_content"
-            android:text="☀️ LN"
-            android:textColor="#80CBC4"
-            android:textSize="10sp"/>
+            android:text="☀️"
+            android:textSize="14sp"
+            android:gravity="center"/>
 
         <TextView
             android:id="@+id/widget_lunch"
@@ -91,27 +83,27 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="—"
-            android:textColor="#FFFFFF"
-            android:textSize="11sp"
+            android:textColor="#E8E8F0"
+            android:textSize="13sp"
             android:maxLines="1"
-            android:ellipsize="end"/>
+            android:ellipsize="end"
+            android:layout_marginStart="6dp"/>
     </LinearLayout>
 
     <!-- Snack -->
     <LinearLayout
-        android:id="@+id/row_snack"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginBottom="5dp"
+        android:layout_marginBottom="6dp"
         android:gravity="center_vertical">
 
         <TextView
-            android:layout_width="60dp"
+            android:layout_width="28dp"
             android:layout_height="wrap_content"
-            android:text="🍎 SN"
-            android:textColor="#80CBC4"
-            android:textSize="10sp"/>
+            android:text="🍎"
+            android:textSize="14sp"
+            android:gravity="center"/>
 
         <TextView
             android:id="@+id/widget_snack"
@@ -119,26 +111,27 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="—"
-            android:textColor="#FFFFFF"
-            android:textSize="11sp"
+            android:textColor="#E8E8F0"
+            android:textSize="13sp"
             android:maxLines="1"
-            android:ellipsize="end"/>
+            android:ellipsize="end"
+            android:layout_marginStart="6dp"/>
     </LinearLayout>
 
     <!-- Dinner -->
     <LinearLayout
-        android:id="@+id/row_dinner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
+        android:layout_marginBottom="10dp"
         android:gravity="center_vertical">
 
         <TextView
-            android:layout_width="60dp"
+            android:layout_width="28dp"
             android:layout_height="wrap_content"
-            android:text="🌙 DN"
-            android:textColor="#80CBC4"
-            android:textSize="10sp"/>
+            android:text="🌙"
+            android:textSize="14sp"
+            android:gravity="center"/>
 
         <TextView
             android:id="@+id/widget_dinner"
@@ -146,19 +139,104 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="—"
-            android:textColor="#FFFFFF"
-            android:textSize="11sp"
+            android:textColor="#E8E8F0"
+            android:textSize="13sp"
             android:maxLines="1"
-            android:ellipsize="end"/>
+            android:ellipsize="end"
+            android:layout_marginStart="6dp"/>
     </LinearLayout>
 
-    <!-- Loading / Error message -->
+    <!-- Divider -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#2D2D44"
+        android:layout_marginBottom="10dp"/>
+
+    <!-- Shopping header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="6dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="🛒 Shopping"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"/>
+
+        <TextView
+            android:id="@+id/widget_shop_progress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0%"
+            android:textColor="#7B68EE"
+            android:textSize="13sp"
+            android:textStyle="bold"/>
+    </LinearLayout>
+
+    <!-- Shopping progress bar background -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:background="#2D2D44"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:id="@+id/widget_shop_bar"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:background="#7B68EE"/>
+    </FrameLayout>
+
+    <!-- Shopping item 1 -->
+    <TextView
+        android:id="@+id/widget_shop1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="#B8B8CC"
+        android:textSize="12sp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:layout_marginBottom="2dp"
+        android:drawablePadding="6dp"/>
+
+    <!-- Shopping item 2 -->
+    <TextView
+        android:id="@+id/widget_shop2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="#B8B8CC"
+        android:textSize="12sp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:layout_marginBottom="2dp"/>
+
+    <!-- Shopping item 3 -->
+    <TextView
+        android:id="@+id/widget_shop3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="#B8B8CC"
+        android:textSize="12sp"
+        android:maxLines="1"
+        android:ellipsize="end"/>
+
+    <!-- Status -->
     <TextView
         android:id="@+id/widget_status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text=""
-        android:textColor="#80CBC4"
+        android:textColor="#9E9EB8"
         android:textSize="10sp"
         android:gravity="center"
         android:layout_marginTop="4dp"

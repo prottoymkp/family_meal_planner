@@ -3,6 +3,7 @@ import { api } from '../utils/api'
 import { getWeekDays, getToday } from '../utils/dates'
 import { SLOT_TIMES } from '../utils/constants'
 import { sampleMealPlan } from '../utils/sampleData'
+import { getFoodEmoji, getBgColor } from '../utils/foodEmoji'
 
 export default function CalendarPage({ weekStart, useDemo }) {
   const [days] = useState(() => getWeekDays(weekStart))
@@ -61,7 +62,25 @@ export default function CalendarPage({ weekStart, useDemo }) {
               {meal.slot} — {SLOT_TIMES[meal.slot] || ''}
             </div>
             <div className="meal-card">
-              <div className="text-[14px] font-medium mb-1">{meal.recipeName}</div>
+              {/* Meal header with food emoji thumbnail */}
+              <div className="flex items-start gap-3 mb-1.5">
+                <div className="flex-shrink-0 w-11 h-11 rounded-lg flex items-center justify-center text-xl" style={{ backgroundColor: getBgColor(i) }}>
+                  {getFoodEmoji(meal.recipeName, meal.slot)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[14px] font-medium leading-tight">{meal.recipeName}</div>
+                  {/* Calorie/macro info */}
+                  {meal.calories ? (
+                    <div className="text-[11px] text-gray-400 mt-0.5">
+                      {meal.calories} cal · {meal.carbs}g carb · {meal.protein}g protein
+                    </div>
+                  ) : meal.portions?.muhtasim && (
+                    <div className="text-[11px] text-gray-400 mt-0.5">
+                      {meal.portions.muhtasim.match(/\d+g?\s*carb/i)?.[0] || ''}
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {/* Portion badges */}
               {meal.portions && (
