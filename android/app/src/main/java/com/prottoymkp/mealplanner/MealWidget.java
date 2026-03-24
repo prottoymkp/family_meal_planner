@@ -75,11 +75,30 @@ public class MealWidget extends AppWidgetProvider {
         protected String[] doInBackground(Void... voids) {
             try {
                 String urlStr = API_URL + "?action=getMealPlanDay&date=" + date;
-                URL url = new URL(urlStr);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(10000);
-                conn.setReadTimeout(10000);
-                conn.setRequestMethod("GET");
+
+                // Follow redirects manually (Apps Script uses HTTPS→HTTPS redirect)
+                HttpURLConnection conn = null;
+                for (int redirects = 0; redirects < 5; redirects++) {
+                    URL url = new URL(urlStr);
+                    conn = (HttpURLConnection) url.openConnection();
+                    conn.setConnectTimeout(15000);
+                    conn.setReadTimeout(15000);
+                    conn.setRequestMethod("GET");
+                    conn.setInstanceFollowRedirects(false);
+                    conn.setRequestProperty("User-Agent", "MealPlannerWidget/1.0");
+
+                    int code = conn.getResponseCode();
+                    if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                        String location = conn.getHeaderField("Location");
+                        conn.disconnect();
+                        if (location == null) { error = "Redirect failed"; return null; }
+                        urlStr = location;
+                        continue;
+                    }
+                    if (code != 200) { error = "Error " + code; return null; }
+                    break;
+                }
+                if (conn == null) { error = "No connection"; return null; }
 
                 int code = conn.getResponseCode();
                 if (code != 200) { error = "Server error " + code; return null; }
