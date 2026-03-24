@@ -1,0 +1,12 @@
+{
+  "appId": "com.prottoymkp.mealplanner",
+  "appName": "Family Meal Planner",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}
