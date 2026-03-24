@@ -1,7 +1,8 @@
 const API_KEY = 'MEAL_PLANNER_API_URL'
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbzdKhkahyOtt6zT06_jP60-6I46fGI-xzM2F9DKdKYXuvDWOSkrBHX7ygyEijtnVE17hg/exec'
 
 export function getApiUrl() {
-  return localStorage.getItem(API_KEY) || ''
+  return localStorage.getItem(API_KEY) || DEFAULT_API_URL
 }
 
 export function setApiUrl(url) {
