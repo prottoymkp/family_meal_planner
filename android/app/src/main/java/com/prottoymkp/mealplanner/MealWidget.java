@@ -5,7 +5,9 @@ import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProvider;
 import android.content.Context;
 import android.content.Intent;
-import android.os.AsyncTask;
+import android.graphics.Color;
+import android.os.Handler;
+import android.os.Looper;
 import android.widget.RemoteViews;
 
 import org.json.JSONArray;
@@ -18,6 +20,8 @@ import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MealWidget extends AppWidgetProvider {
 
@@ -32,92 +36,98 @@ public class MealWidget extends AppWidgetProvider {
     }
 
     static void updateWidget(Context context, AppWidgetManager appWidgetManager, int widgetId) {
+        // Show initial loading state
+        RemoteViews views = buildViews(context, null, "Loading…");
+        appWidgetManager.updateAppWidget(widgetId, views);
+
+        String dateStr = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Handler handler = new Handler(Looper.getMainLooper());
+
+        executor.execute(() -> {
+            String[] result = fetchMeals(dateStr);
+            String errorMsg = (result == null) ? "Could not load data" : null;
+
+            handler.post(() -> {
+                RemoteViews updated = buildViews(context, result, errorMsg);
+                appWidgetManager.updateAppWidget(widgetId, updated);
+            });
+        });
+    }
+
+    private static RemoteViews buildViews(Context context, String[] slots, String statusMsg) {
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_meal_planner);
 
-        // Set today's date label
+        // Teal background
+        views.setInt(R.id.widget_root, "setBackgroundColor", Color.parseColor("#0F6E56"));
+
+        // Date label
         String today = new SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(new Date());
         views.setTextViewText(R.id.widget_date, today);
 
-        // Tap widget → open the app
-        Intent launchIntent = new Intent(context, MainActivity.class);
-        PendingIntent pendingIntent = PendingIntent.getActivity(
-            context, 0, launchIntent,
+        // Tap → open app
+        Intent intent = new Intent(context, MainActivity.class);
+        PendingIntent pi = PendingIntent.getActivity(
+            context, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
-        views.setOnClickPendingIntent(R.id.widget_title, pendingIntent);
+        views.setOnClickPendingIntent(R.id.widget_root, pi);
 
-        // Show loading state
-        views.setTextViewText(R.id.widget_status, "Updating…");
-        views.setViewVisibility(R.id.widget_status, android.view.View.VISIBLE);
-        appWidgetManager.updateAppWidget(widgetId, views);
-
-        // Fetch data in background
-        String dateParam = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
-        new FetchMealsTask(context, appWidgetManager, widgetId, dateParam).execute();
+        if (slots != null) {
+            views.setTextViewText(R.id.widget_breakfast, slots[0].isEmpty() ? "—" : slots[0]);
+            views.setTextViewText(R.id.widget_lunch,     slots[1].isEmpty() ? "—" : slots[1]);
+            views.setTextViewText(R.id.widget_snack,     slots[2].isEmpty() ? "—" : slots[2]);
+            views.setTextViewText(R.id.widget_dinner,    slots[3].isEmpty() ? "—" : slots[3]);
+            views.setViewVisibility(R.id.widget_status, android.view.View.GONE);
+        } else {
+            views.setTextViewText(R.id.widget_breakfast, "—");
+            views.setTextViewText(R.id.widget_lunch,     "—");
+            views.setTextViewText(R.id.widget_snack,     "—");
+            views.setTextViewText(R.id.widget_dinner,    "—");
+            views.setTextViewText(R.id.widget_status, statusMsg != null ? statusMsg : "");
+            views.setViewVisibility(R.id.widget_status,
+                statusMsg != null ? android.view.View.VISIBLE : android.view.View.GONE);
+        }
+        return views;
     }
 
-    // ── AsyncTask to fetch meals from Apps Script ──────────────────────────
-    private static class FetchMealsTask extends AsyncTask<Void, Void, String[]> {
-        private final Context context;
-        private final AppWidgetManager manager;
-        private final int widgetId;
-        private final String date;
-        private String error = null;
+    private static String[] fetchMeals(String date) {
+        try {
+            String urlStr = API_URL + "?action=getMealPlanDay&date=" + date;
 
-        FetchMealsTask(Context ctx, AppWidgetManager mgr, int wid, String date) {
-            this.context = ctx;
-            this.manager = mgr;
-            this.widgetId = wid;
-            this.date = date;
-        }
-
-        @Override
-        protected String[] doInBackground(Void... voids) {
-            try {
-                String urlStr = API_URL + "?action=getMealPlanDay&date=" + date;
-
-                // Follow redirects manually (Apps Script uses HTTPS→HTTPS redirect)
-                HttpURLConnection conn = null;
-                for (int redirects = 0; redirects < 5; redirects++) {
-                    URL url = new URL(urlStr);
-                    conn = (HttpURLConnection) url.openConnection();
-                    conn.setConnectTimeout(15000);
-                    conn.setReadTimeout(15000);
-                    conn.setRequestMethod("GET");
-                    conn.setInstanceFollowRedirects(false);
-                    conn.setRequestProperty("User-Agent", "MealPlannerWidget/1.0");
-
-                    int code = conn.getResponseCode();
-                    if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
-                        String location = conn.getHeaderField("Location");
-                        conn.disconnect();
-                        if (location == null) { error = "Redirect failed"; return null; }
-                        urlStr = location;
-                        continue;
-                    }
-                    if (code != 200) { error = "Error " + code; return null; }
-                    break;
-                }
-                if (conn == null) { error = "No connection"; return null; }
+            // Follow up to 5 redirects (Apps Script redirects HTTPS→HTTPS)
+            for (int i = 0; i < 5; i++) {
+                URL url = new URL(urlStr);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(15000);
+                conn.setInstanceFollowRedirects(false);
+                conn.setRequestProperty("User-Agent", "MealPlannerWidget/1.0");
 
                 int code = conn.getResponseCode();
-                if (code != 200) { error = "Server error " + code; return null; }
+                if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                    String location = conn.getHeaderField("Location");
+                    conn.disconnect();
+                    if (location == null) return null;
+                    urlStr = location;
+                    continue;
+                }
+                if (code != 200) return null;
 
                 BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(conn.getInputStream())
-                );
+                    new InputStreamReader(conn.getInputStream()));
                 StringBuilder sb = new StringBuilder();
                 String line;
                 while ((line = reader.readLine()) != null) sb.append(line);
                 reader.close();
+                conn.disconnect();
 
                 JSONObject json = new JSONObject(sb.toString());
                 JSONArray meals = json.optJSONArray("meals");
-
-                String[] slots = {"", "", "", ""}; // BF, LN, SN, DN
+                String[] slots = {"", "", "", ""};
                 if (meals != null) {
-                    for (int i = 0; i < meals.length(); i++) {
-                        JSONObject meal = meals.getJSONObject(i);
+                    for (int j = 0; j < meals.length(); j++) {
+                        JSONObject meal = meals.getJSONObject(j);
                         String slot = meal.optString("slot", "");
                         String name = meal.optString("recipeName", "");
                         switch (slot) {
@@ -129,42 +139,10 @@ public class MealWidget extends AppWidgetProvider {
                     }
                 }
                 return slots;
-
-            } catch (Exception e) {
-                error = "Could not load";
-                return null;
             }
+        } catch (Exception e) {
+            // fall through
         }
-
-        @Override
-        protected void onPostExecute(String[] slots) {
-            RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_meal_planner);
-            String today = new SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(new Date());
-            views.setTextViewText(R.id.widget_date, today);
-
-            // Tap → open app
-            Intent launchIntent = new Intent(context, MainActivity.class);
-            PendingIntent pi = PendingIntent.getActivity(
-                context, 0, launchIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-            );
-            views.setOnClickPendingIntent(R.id.widget_title, pi);
-
-            if (slots != null) {
-                views.setTextViewText(R.id.widget_breakfast, slots[0].isEmpty() ? "—" : slots[0]);
-                views.setTextViewText(R.id.widget_lunch,     slots[1].isEmpty() ? "—" : slots[1]);
-                views.setTextViewText(R.id.widget_snack,     slots[2].isEmpty() ? "—" : slots[2]);
-                views.setTextViewText(R.id.widget_dinner,    slots[3].isEmpty() ? "—" : slots[3]);
-                views.setViewVisibility(R.id.widget_status, android.view.View.GONE);
-            } else {
-                views.setTextViewText(R.id.widget_breakfast, "—");
-                views.setTextViewText(R.id.widget_lunch,     "—");
-                views.setTextViewText(R.id.widget_snack,     "—");
-                views.setTextViewText(R.id.widget_dinner,    "—");
-                views.setTextViewText(R.id.widget_status, error != null ? error : "No data");
-                views.setViewVisibility(R.id.widget_status, android.view.View.VISIBLE);
-            }
-            manager.updateAppWidget(widgetId, views);
-        }
+        return null;
     }
 }
