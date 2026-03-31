@@ -1,406 +1,307 @@
-/**
- * FAMILY MEAL PLANNER — Apps Script API
- * 
- * SETUP:
- * 1. Open your Google Sheet (the uploaded Master template)
- * 2. Go to Extensions > Apps Script
- * 3. Replace the default Code.gs content with this entire file
- * 4. Deploy > New deployment > Web app
- *    - Execute as: Me
- *    - Who has access: Anyone
- * 5. Copy the Web App URL — that's your API endpoint
- * 
- * The PWA calls this API with ?action=xxx to get data.
- * All data comes from the sheets — you edit sheets, app updates.
- */
-
-// ============================================================
-// CONFIG
-// ============================================================
 const SHEET_NAMES = {
-  recipes: 'Recipes',
+  recipeMaster: 'RecipeMaster',
   mealPlan: 'MealPlan',
-  family: 'FamilyProfiles',
-  shopping: 'ShoppingList',
-  picky: 'PickyEaterNotes',
-  ingredients: 'IngredientDB'
-};
+  familyProfiles: 'FamilyProfiles',
+  shoppingList: 'ShoppingList',
+  pickyNotes: 'PickyEaterNotes',
+  ingredientDb: 'IngredientDB',
+}
 
-// ============================================================
-// MAIN ENTRY POINT
-// ============================================================
+const SLOT_ORDER = {
+  Breakfast: 1,
+  Lunch: 2,
+  Snack: 3,
+  Dinner: 4,
+}
+
 function doGet(e) {
-  const action = e.parameter.action || 'ping';
-  let result;
-
+  const action = getParam_(e, 'action', 'ping')
+  let result
   try {
     switch (action) {
       case 'ping':
-        result = { status: 'ok', message: 'Meal Planner API is running', timestamp: new Date().toISOString() };
-        break;
+        result = { status: 'ok', message: 'Meal Planner API is running', timestamp: new Date().toISOString() }
+        break
       case 'getRecipes':
-        result = getRecipes(e.parameter);
-        break;
+        result = getRecipes_(e.parameter || {})
+        break
       case 'getRecipe':
-        result = getRecipeById(e.parameter.id);
-        break;
+        result = getRecipeById_(getParam_(e, 'id', ''))
+        break
       case 'getMealPlan':
-        result = getMealPlan(e.parameter);
-        break;
+        result = getMealPlan_(e.parameter || {})
+        break
       case 'getMealPlanDay':
-        result = getMealPlanDay(e.parameter.date);
-        break;
+        result = getMealPlanDay_(getParam_(e, 'date', ''))
+        break
       case 'getFamily':
-        result = getFamily();
-        break;
+        result = getFamily_()
+        break
       case 'getShopping':
-        result = getShopping(e.parameter);
-        break;
+        result = getShopping_(e.parameter || {}, true)
+        break
       case 'getPickyNotes':
-        result = getPickyNotes(e.parameter.memberId);
-        break;
+        result = getPickyNotes_(getParam_(e, 'memberId', ''))
+        break
       case 'getKitchenDay':
-        result = getKitchenDay(e.parameter.date);
-        break;
+        result = getKitchenDay_(getParam_(e, 'date', ''))
+        break
       case 'getDashboard':
-        result = getDashboard();
-        break;
+        result = getDashboard_()
+        break
+      case 'getNextWeekPlan':
+        result = getNextWeekPlan_(getParam_(e, 'weekStart', ''))
+        break
       default:
-        result = { error: 'Unknown action: ' + action };
+        throw new Error('Unknown action: ' + action)
     }
   } catch (err) {
-    result = { error: err.message, stack: err.stack };
+    result = { error: err.message }
   }
-
-  return ContentService
-    .createTextOutput(JSON.stringify(result))
-    .setMimeType(ContentService.MimeType.JSON);
+  return jsonOutput_(result)
 }
 
 function doPost(e) {
-  const body = JSON.parse(e.postData.contents);
-  const action = body.action;
-  let result;
-
+  let result
   try {
-    switch (action) {
+    const body = JSON.parse((e.postData && e.postData.contents) || '{}')
+    switch (body.action) {
       case 'toggleShopping':
-        result = toggleShoppingItem(body.row, body.checked);
-        break;
+        result = toggleShoppingItem_(body.row, body.checked)
+        break
       case 'generateShopping':
-        result = generateShoppingList(body.weekStart);
-        break;
+        result = generateShoppingList_(body.weekStart)
+        break
+      case 'saveWeekPlan':
+        result = saveWeekPlan_(body)
+        break
       default:
-        result = { error: 'Unknown POST action: ' + action };
+        throw new Error('Unknown POST action: ' + body.action)
     }
   } catch (err) {
-    result = { error: err.message };
+    result = { error: err.message }
   }
-
-  return ContentService
-    .createTextOutput(JSON.stringify(result))
-    .setMimeType(ContentService.MimeType.JSON);
+  return jsonOutput_(result)
 }
 
-// ============================================================
-// HELPER: Read sheet into array of objects
-// ============================================================
-function sheetToObjects(sheetName) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ws = ss.getSheetByName(sheetName);
-  if (!ws) return [];
-
-  const data = ws.getDataRange().getValues();
-  if (data.length < 2) return [];
-
-  const headers = data[0].map(h => toCamelCase(String(h)));
-  const rows = [];
-
-  for (let i = 1; i < data.length; i++) {
-    const row = {};
-    let hasData = false;
-    for (let j = 0; j < headers.length; j++) {
-      let val = data[i][j];
-      if (val instanceof Date) {
-        val = Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
-      }
-      row[headers[j]] = val;
-      if (val !== '' && val !== null && val !== undefined) hasData = true;
-    }
-    row._row = i + 1; // 1-indexed sheet row for updates
-    if (hasData) rows.push(row);
+function getRecipes_(params) {
+  let recipes = loadRecipeCatalog_().recipes
+  if (params.category) {
+    recipes = recipes.filter(function(recipe) { return recipe.category === params.category })
   }
-  return rows;
+  if (params.kidFriendly === 'true') {
+    recipes = recipes.filter(function(recipe) { return recipe.kidFriendly })
+  }
+  if (params.season && params.season !== 'all') {
+    recipes = recipes.filter(function(recipe) {
+      return !recipe.season || recipe.season === 'all' || recipe.season === params.season
+    })
+  }
+  if (params.tag) {
+    const tag = String(params.tag).toLowerCase()
+    recipes = recipes.filter(function(recipe) {
+      return recipe.tags.some(function(value) { return value.toLowerCase().indexOf(tag) >= 0 })
+    })
+  }
+  return { count: recipes.length, recipes: recipes }
 }
 
-function toCamelCase(str) {
-  return str
-    .replace(/[^a-zA-Z0-9 ]/g, '')
-    .trim()
-    .split(/\s+/)
-    .map((word, i) => i === 0 ? word.toLowerCase() : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join('');
+function getRecipeById_(recipeId) {
+  if (!recipeId) throw new Error('Recipe id is required.')
+  const recipe = loadRecipeCatalog_().index[recipeId]
+  if (!recipe) throw new Error('Recipe not found in RecipeMaster: ' + recipeId)
+  return recipe
 }
 
-// ============================================================
-// GET RECIPES
-// ============================================================
-function getRecipes(params) {
-  let recipes = sheetToObjects(SHEET_NAMES.recipes);
+function getMealPlan_(params) {
+  const weekStart = normalizeDateInput_(params.weekStart || getCurrentWeekStart_())
+  const weekEnd = addDays_(weekStart, 6)
+  const recipeCatalog = loadRecipeCatalog_()
+  const planContext = getSheetRows_(SHEET_NAMES.mealPlan)
+  const scopedRows = planContext.rows.filter(function(row) {
+    const date = normalizeDateInput_(readCell_(planContext.meta, row, ['Date']))
+    return date >= weekStart && date <= weekEnd
+  })
+  validateMealPlanRows_(planContext.meta, scopedRows, recipeCatalog.index)
 
-  // Filter by category
-  if (params && params.category) {
-    recipes = recipes.filter(r => r.category === params.category);
-  }
-
-  // Filter by kid-friendly
-  if (params && params.kidFriendly === 'true') {
-    recipes = recipes.filter(r => r.kidFriendly === 'Yes');
-  }
-
-  // Filter by dietary tag
-  if (params && params.tag) {
-    recipes = recipes.filter(r => r.dietaryTags && r.dietaryTags.includes(params.tag));
-  }
-
-  return {
-    count: recipes.length,
-    recipes: recipes.map(r => ({
-      id: r.recipeId,
-      name: r.recipeName,
-      category: r.category,
-      cuisine: r.cuisine,
-      prepTime: r.prepTimeMin,
-      cookTime: r.cookTimeMin,
-      difficulty: r.difficulty,
-      tags: r.dietaryTags ? r.dietaryTags.split(',').map(t => t.trim()) : [],
-      kidFriendly: r.kidFriendly === 'Yes',
-      pickyOk: r.pickyEaterOk === 'Yes',
-      calories: r.caloriesServing,
-      carbs: r.carbsG,
-      protein: r.proteinG,
-      fat: r.fatG,
-      fiber: r.fiberG,
-      baseServings: r.baseServings,
-      ingredients: parseIngredients(r.ingredientsNameQtyUnit),
-      method: r.methodSteps,
-      pickyModifier: r.pickyModifier,
-      notes: r.notes
-    }))
-  };
-}
-
-function getRecipeById(id) {
-  const all = getRecipes({});
-  const recipe = all.recipes.find(r => r.id === id);
-  if (!recipe) return { error: 'Recipe not found: ' + id };
-  return recipe;
-}
-
-function parseIngredients(str) {
-  if (!str) return [];
-  return str.split(',').map(item => {
-    const parts = item.trim().split(':');
-    return {
-      key: parts[0] || '',
-      qty: parseFloat(parts[1]) || 0,
-      unit: parts[2] || ''
-    };
-  });
-}
-
-// ============================================================
-// GET MEAL PLAN
-// ============================================================
-function getMealPlan(params) {
-  let plan = sheetToObjects(SHEET_NAMES.mealPlan);
-
-  // Filter by week (weekStart = 'YYYY-MM-DD')
-  if (params && params.weekStart) {
-    const start = new Date(params.weekStart);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 7);
-
-    plan = plan.filter(p => {
-      const d = new Date(p.date);
-      return d >= start && d < end;
-    });
-  }
-
-  // Group by date
-  const grouped = {};
-  plan.forEach(p => {
-    const date = p.date;
+  const grouped = {}
+  scopedRows.forEach(function(row) {
+    const date = normalizeDateInput_(readCell_(planContext.meta, row, ['Date']))
     if (!grouped[date]) {
-      grouped[date] = { date: date, day: p.day, meals: [] };
+      grouped[date] = { date: date, day: asString_(readCell_(planContext.meta, row, ['Day'])) || getDayName_(date), meals: [] }
     }
-    grouped[date].meals.push({
-      slot: p.mealSlot,
-      recipeId: p.recipeId,
-      recipeName: p.recipeNameAuto,
-      cookScaledFor: p.cookScaledFor,
-      portions: {
-        muhtasim: p.muhtasimPortion,
-        adults: p.adultsPortion,
-        teens: p.teensPortion,
-        kids: p.kidsPortion
-      },
-      pickyModifier: p.pickyModifier,
-      kitchenNotes: p.kitchenNotes,
-      assignedCook: p.assignedCook
-    });
-  });
+    const recipeId = asString_(readCell_(planContext.meta, row, ['Recipe ID']))
+    grouped[date].meals.push(buildMealObject_(planContext.meta, row, recipeCatalog.index[recipeId]))
+  })
 
+  const days = []
+  for (let offset = 0; offset < 7; offset += 1) {
+    const date = addDays_(weekStart, offset)
+    const day = grouped[date] || { date: date, day: getDayName_(date), meals: [] }
+    day.meals.sort(compareMeals_)
+    days.push(day)
+  }
+  return { weekStart: weekStart, days: days }
+}
+
+function getMealPlanDay_(date) {
+  const targetDate = normalizeDateInput_(date || todayIso_())
+  const recipeCatalog = loadRecipeCatalog_()
+  const planContext = getSheetRows_(SHEET_NAMES.mealPlan)
+  const rows = planContext.rows.filter(function(row) {
+    return normalizeDateInput_(readCell_(planContext.meta, row, ['Date'])) === targetDate
+  })
+  validateMealPlanRows_(planContext.meta, rows, recipeCatalog.index)
+  const meals = rows.map(function(row) {
+    const recipeId = asString_(readCell_(planContext.meta, row, ['Recipe ID']))
+    return buildMealObject_(planContext.meta, row, recipeCatalog.index[recipeId])
+  }).sort(compareMeals_)
   return {
-    weekStart: params ? params.weekStart : null,
-    days: Object.values(grouped)
-  };
+    date: targetDate,
+    day: rows.length > 0 ? asString_(readCell_(planContext.meta, rows[0], ['Day'])) || getDayName_(targetDate) : getDayName_(targetDate),
+    meals: meals,
+  }
 }
 
-function getMealPlanDay(date) {
-  const all = getMealPlan({ weekStart: null });
-  const day = all.days.find(d => d.date === date);
-  if (!day) return { error: 'No meal plan for: ' + date, date: date };
-  return day;
+function getFamily_() {
+  const context = getSheetRows_(SHEET_NAMES.familyProfiles, true)
+  if (!context) return { count: 0, members: [] }
+  const members = context.rows.map(function(row) {
+    return {
+      id: asString_(readCell_(context.meta, row, ['Member ID'])),
+      name: asString_(readCell_(context.meta, row, ['Name'])),
+      age: asNumber_(readCell_(context.meta, row, ['Age'])),
+      gender: asString_(readCell_(context.meta, row, ['Gender'])),
+      group: asString_(readCell_(context.meta, row, ['Dietary Group'])),
+      portionMultiplier: asNumber_(readCell_(context.meta, row, ['Portion Multiplier'])) || 1,
+      riceLimit: asString_(readCell_(context.meta, row, ['Rice Limit (cup/meal)'])),
+      calorieTarget: asNumber_(readCell_(context.meta, row, ['Daily Calorie Target'])),
+      restrictions: asString_(readCell_(context.meta, row, ['Restrictions'])),
+      allergies: asString_(readCell_(context.meta, row, ['Allergies'])),
+      preferences: asString_(readCell_(context.meta, row, ['Preferences'])),
+      notes: asString_(readCell_(context.meta, row, ['Notes'])),
+    }
+  })
+  return { count: members.length, members: members }
 }
 
-// ============================================================
-// GET FAMILY PROFILES
-// ============================================================
-function getFamily() {
-  const members = sheetToObjects(SHEET_NAMES.family);
-  return {
-    count: members.length,
-    members: members.map(m => ({
-      id: m.memberId,
-      name: m.name,
-      age: m.age,
-      gender: m.gender,
-      group: m.dietaryGroup,
-      portionMultiplier: m.portionMultiplier,
-      riceLimit: m.riceLimitCupmeal,
-      calorieTarget: m.dailyCalorieTarget,
-      restrictions: m.restrictions,
-      allergies: m.allergies,
-      preferences: m.preferences,
-      notes: m.notes
-    }))
-  };
-}
+function getShopping_(params, allowAutogenerate) {
+  const date = params.date ? normalizeDateInput_(params.date) : ''
+  const weekStart = normalizeDateInput_(params.weekStart || (date ? getWeekStartForDate_(date) : getCurrentWeekStart_()))
+  const scopeStart = addDays_(weekStart, -1)
+  const scopeEnd = addDays_(weekStart, 6)
+  let context = getSheetRows_(SHEET_NAMES.shoppingList)
+  let items = filterShoppingRows_(context, date, scopeStart, scopeEnd)
 
-// ============================================================
-// GET SHOPPING LIST
-// ============================================================
-function getShopping(params) {
-  let items = sheetToObjects(SHEET_NAMES.shopping);
-
-  if (params && params.date) {
-    items = items.filter(i => i.date === params.date);
+  if (items.length === 0 && allowAutogenerate) {
+    generateShoppingList_(weekStart)
+    context = getSheetRows_(SHEET_NAMES.shoppingList)
+    items = filterShoppingRows_(context, date, scopeStart, scopeEnd)
   }
 
-  if (params && params.tag) {
-    items = items.filter(i => i.shoppingTag === params.tag);
+  if (params.tag) {
+    items = items.filter(function(item) { return item.tag === normalizeShoppingTag_(params.tag) })
   }
 
-  // Group by category
-  const grouped = {};
-  items.forEach(item => {
-    const cat = item.category || 'Other';
-    if (!grouped[cat]) grouped[cat] = [];
-    grouped[cat].push({
-      row: item._row,
-      ingredient: item.ingredient,
-      category: cat,
-      quantity: item.quantity,
-      unit: item.unit,
-      tag: item.shoppingTag,
-      checked: item.checked === 'Yes',
-      shopper: item.shopper,
-      notes: item.notes
-    });
-  });
+  const categories = {}
+  items.forEach(function(item) {
+    if (!categories[item.category]) categories[item.category] = []
+    categories[item.category].push(item)
+  })
+  Object.keys(categories).forEach(function(category) {
+    categories[category].sort(function(a, b) {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1
+      return a.ingredient.localeCompare(b.ingredient)
+    })
+  })
 
-  const total = items.length;
-  const checked = items.filter(i => i.checked === 'Yes').length;
-
+  const checked = items.filter(function(item) { return item.checked }).length
   return {
-    total: total,
+    weekStart: weekStart,
+    total: items.length,
     checked: checked,
-    progress: total > 0 ? Math.round((checked / total) * 100) : 0,
-    categories: grouped
-  };
+    progress: items.length > 0 ? Math.round((checked / items.length) * 100) : 0,
+    categories: categories,
+  }
 }
 
-// ============================================================
-// TOGGLE SHOPPING ITEM (POST)
-// ============================================================
-function toggleShoppingItem(rowNum, checked) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ws = ss.getSheetByName(SHEET_NAMES.shopping);
-  // Column G = Checked?
-  ws.getRange(rowNum, 7).setValue(checked ? 'Yes' : 'No');
-  return { success: true, row: rowNum, checked: checked };
+function toggleShoppingItem_(rowNumber, checked) {
+  if (!rowNumber) throw new Error('Shopping row number is required.')
+  const meta = getSheetMeta_(SHEET_NAMES.shoppingList)
+  const checkedCol = getColumnIndex_(meta, ['Checked?', 'Checked'], true)
+  meta.sheet.getRange(Number(rowNumber), checkedCol).setValue(checked ? 'Yes' : 'No')
+  return { success: true, row: Number(rowNumber), checked: Boolean(checked) }
 }
 
-// ============================================================
-// GET PICKY EATER NOTES
-// ============================================================
-function getPickyNotes(memberId) {
-  let notes = sheetToObjects(SHEET_NAMES.picky);
-
-  if (memberId) {
-    notes = notes.filter(n => n.memberId === memberId);
+function getPickyNotes_(memberId) {
+  const context = getSheetRows_(SHEET_NAMES.pickyNotes, true)
+  if (!context) {
+    return { memberId: memberId || 'all', summary: { loves: [], likes: [], dislikes: [], refuses: [], unsure: [] }, details: [] }
   }
 
-  // Group by status
-  const loves = notes.filter(n => n.status === 'Loves');
-  const likes = notes.filter(n => n.status === 'Likes');
-  const refuses = notes.filter(n => n.status === 'Refuses');
-  const dislikes = notes.filter(n => n.status === 'Dislikes');
-  const unsure = notes.filter(n => n.status === 'Unsure');
+  let rows = context.rows
+  if (memberId) {
+    rows = rows.filter(function(row) { return asString_(readCell_(context.meta, row, ['Member ID'])) === memberId })
+  }
+
+  const details = rows.map(function(row) {
+    return {
+      food: asString_(readCell_(context.meta, row, ['Food Item'])),
+      status: asString_(readCell_(context.meta, row, ['Status'])),
+      workaround: asString_(readCell_(context.meta, row, ['Notes / Workaround'])),
+      testedDate: normalizeDateInput_(readCell_(context.meta, row, ['Tested Date']), true),
+      confidence: asString_(readCell_(context.meta, row, ['Confidence'])),
+    }
+  })
+
+  function foodsByStatus(status) {
+    return details.filter(function(item) { return item.status === status }).map(function(item) { return item.food })
+  }
 
   return {
     memberId: memberId || 'all',
     summary: {
-      loves: loves.map(n => n.foodItem),
-      refuses: refuses.map(n => n.foodItem),
-      dislikes: dislikes.map(n => n.foodItem),
-      unsure: unsure.map(n => n.foodItem)
+      loves: foodsByStatus('Loves'),
+      likes: foodsByStatus('Likes'),
+      dislikes: foodsByStatus('Dislikes'),
+      refuses: foodsByStatus('Refuses'),
+      unsure: foodsByStatus('Unsure'),
     },
-    details: notes.map(n => ({
-      food: n.foodItem,
-      status: n.status,
-      workaround: n.notesWorkaround,
-      confidence: n.confidence
-    }))
-  };
+    details: details,
+  }
 }
 
-// ============================================================
-// GET KITCHEN DAY (combined view for cook staff)
-// ============================================================
-function getKitchenDay(date) {
-  if (!date) {
-    date = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+function getKitchenDay_(date) {
+  const targetDate = normalizeDateInput_(date || todayIso_())
+  const dayPlan = getMealPlanDay_(targetDate)
+  const family = getFamily_()
+  const pickyNotes = getPickyNotes_('F007')
+  const shopping = getShopping_({ date: targetDate }, true)
+  const timeline = []
+  const slotTimes = {
+    Breakfast: { prep: '6:00 AM', serve: '6:30 AM' },
+    Lunch: { prep: '11:30 AM', serve: '1:00 PM' },
+    Snack: { prep: '4:30 PM', serve: '5:00 PM' },
+    Dinner: { prep: '7:30 PM', serve: '9:30 PM' },
   }
 
-  const dayPlan = getMealPlanDay(date);
-  if (dayPlan.error) return dayPlan;
+  if (shopping.total > 0) {
+    timeline.push({
+      prepTime: '10:00 AM',
+      serveTime: '',
+      slot: 'Shopping',
+      recipe: 'Daily market run',
+      recipeId: '',
+      scaledFor: 0,
+      assignedCook: 'Shopper B',
+      portions: null,
+      pickyModifier: '',
+      kitchenNotes: 'Buy fresh items for today',
+    })
+  }
 
-  const family = getFamily();
-  const pickyNotes = getPickyNotes('F007'); // Daughter's notes
-
-  // Build kitchen timeline
-  const timeline = [];
-  const slotTimes = {
-    'Breakfast': { prep: '6:00 AM', serve: '6:30 AM' },
-    'Lunch': { prep: '11:30 AM', serve: '1:00 PM' },
-    'Snack': { prep: '4:30 PM', serve: '5:00 PM' },
-    'Dinner': { prep: '7:30 PM', serve: '9:30 PM' }
-  };
-
-  dayPlan.meals.forEach(meal => {
-    const times = slotTimes[meal.slot] || { prep: 'TBD', serve: 'TBD' };
+  dayPlan.meals.forEach(function(meal) {
+    const times = slotTimes[meal.slot] || { prep: '', serve: '' }
     timeline.push({
       prepTime: times.prep,
       serveTime: times.serve,
@@ -411,134 +312,554 @@ function getKitchenDay(date) {
       assignedCook: meal.assignedCook,
       portions: meal.portions,
       pickyModifier: meal.pickyModifier,
-      kitchenNotes: meal.kitchenNotes
-    });
-  });
+      kitchenNotes: meal.kitchenNotes,
+    })
+  })
 
-  // Add shopping run task
-  timeline.splice(1, 0, {
-    prepTime: '10:00 AM',
-    slot: 'Shopping',
-    recipe: 'Daily market run',
-    assignedCook: 'Shopper B',
-    kitchenNotes: 'Buy fresh items for today + tomorrow'
-  });
-
+  timeline.sort(function(a, b) { return toMinutes_(a.prepTime) - toMinutes_(b.prepTime) })
   return {
-    date: date,
+    date: targetDate,
     day: dayPlan.day,
     peopleToFeed: family.count,
     mealsToday: dayPlan.meals.length,
     timeline: timeline,
-    pickyAlerts: pickyNotes.summary.refuses
-  };
+    pickyAlerts: pickyNotes.summary.refuses,
+  }
 }
 
-// ============================================================
-// DASHBOARD (overview for admin)
-// ============================================================
-function getDashboard() {
-  const recipes = sheetToObjects(SHEET_NAMES.recipes);
-  const plan = sheetToObjects(SHEET_NAMES.mealPlan);
-  const family = sheetToObjects(SHEET_NAMES.family);
-  const shopping = sheetToObjects(SHEET_NAMES.shopping);
+function getDashboard_() {
+  const weekStart = getCurrentWeekStart_()
+  const shopping = getShopping_({ weekStart: weekStart }, true)
+  const recipes = getRecipes_({})
+  const family = getFamily_()
+  const plan = getMealPlan_({ weekStart: weekStart })
+  return {
+    weekStart: weekStart,
+    totalRecipes: recipes.count,
+    familySize: family.count,
+    thisWeekMeals: plan.days.reduce(function(total, day) { return total + day.meals.length }, 0),
+    shoppingItems: shopping.total,
+    shoppingChecked: shopping.checked,
+  }
+}
 
-  const thisWeek = plan.filter(p => {
-    const d = new Date(p.date);
-    const now = new Date();
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - now.getDay() + 1);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 7);
-    return d >= weekStart && d < weekEnd;
-  });
+function getNextWeekPlan_(weekStart) {
+  const targetWeekStart = normalizeDateInput_(weekStart || addDays_(getCurrentWeekStart_(), 7))
+  const plan = getMealPlan_({ weekStart: targetWeekStart })
+  const hasMeals = plan.days.some(function(day) { return day.meals.length > 0 })
+  return hasMeals ? plan : null
+}
+
+function saveWeekPlan_(payload) {
+  const weekStart = normalizeDateInput_(payload.weekStart)
+  const days = Array.isArray(payload.days) ? payload.days : []
+  const recipeCatalog = loadRecipeCatalog_()
+  const planContext = getSheetRows_(SHEET_NAMES.mealPlan)
+  const datesToReplace = {}
+
+  days.forEach(function(day) { datesToReplace[normalizeDateInput_(day.date)] = true })
+
+  const rowsToKeep = planContext.rows.filter(function(row) {
+    const rowDate = normalizeDateInput_(readCell_(planContext.meta, row, ['Date']))
+    return !datesToReplace[rowDate]
+  }).map(function(row) { return row.values.slice() })
+
+  const newRows = []
+  days.forEach(function(day) {
+    const date = normalizeDateInput_(day.date)
+    const meals = Array.isArray(day.meals) ? day.meals.slice().sort(compareMeals_) : []
+    meals.forEach(function(meal) {
+      const recipeId = asString_(meal.recipeId)
+      const recipe = recipeCatalog.index[recipeId]
+      if (!recipe) throw new Error('MealPlan save blocked: Recipe ID not found in RecipeMaster: ' + recipeId)
+      newRows.push(buildMealPlanSheetRow_(planContext.meta.headers, {
+        date: date,
+        day: asString_(day.day) || getDayName_(date),
+        meal: meal,
+        recipe: recipe,
+      }))
+    })
+  })
+
+  rewriteSheetData_(planContext.meta.sheet, planContext.meta.headers, rowsToKeep.concat(newRows))
+  const shoppingResult = generateShoppingList_(weekStart)
+  return { success: true, weekStart: weekStart, mealsWritten: newRows.length, shoppingItemsGenerated: shoppingResult.itemsGenerated }
+}
+
+function generateShoppingList_(weekStart) {
+  const targetWeekStart = normalizeDateInput_(weekStart || getCurrentWeekStart_())
+  const scopeStart = addDays_(targetWeekStart, -1)
+  const scopeEnd = addDays_(targetWeekStart, 6)
+  const recipeCatalog = loadRecipeCatalog_()
+  const ingredientIndex = loadIngredientIndex_()
+  const planContext = getSheetRows_(SHEET_NAMES.mealPlan)
+  const shoppingContext = getSheetRows_(SHEET_NAMES.shoppingList)
+  const weekRows = planContext.rows.filter(function(row) {
+    const date = normalizeDateInput_(readCell_(planContext.meta, row, ['Date']))
+    return date >= targetWeekStart && date <= scopeEnd
+  })
+  validateMealPlanRows_(planContext.meta, weekRows, recipeCatalog.index)
+
+  const existingScopedRows = shoppingContext.rows.filter(function(row) {
+    const rowDate = normalizeDateInput_(readCell_(shoppingContext.meta, row, ['Date']))
+    return rowDate >= scopeStart && rowDate <= scopeEnd
+  })
+  const preserved = {}
+  existingScopedRows.forEach(function(row) {
+    const date = normalizeDateInput_(readCell_(shoppingContext.meta, row, ['Date']))
+    const ingredient = asString_(readCell_(shoppingContext.meta, row, ['Ingredient']))
+    const tag = normalizeShoppingTag_(readCell_(shoppingContext.meta, row, ['Shopping Tag']))
+    preserved[[date, tag, ingredient].join('|')] = {
+      checked: asBool_(readCell_(shoppingContext.meta, row, ['Checked?'])) ? 'Yes' : 'No',
+      shopper: asString_(readCell_(shoppingContext.meta, row, ['Shopper'])),
+      notes: asString_(readCell_(shoppingContext.meta, row, ['Notes'])),
+    }
+  })
+
+  const aggregates = {}
+  weekRows.forEach(function(row) {
+    const mealDate = normalizeDateInput_(readCell_(planContext.meta, row, ['Date']))
+    const recipeId = asString_(readCell_(planContext.meta, row, ['Recipe ID']))
+    const recipe = recipeCatalog.index[recipeId]
+    const baseServings = recipe.baseServings || 1
+    const cookScaledFor = asNumber_(readCell_(planContext.meta, row, ['Cook Scaled For'])) || baseServings
+    const scale = cookScaledFor / baseServings
+
+    recipe.ingredients.forEach(function(ingredient) {
+      const ingredientKey = asString_(ingredient.key)
+      const ingredientMeta = ingredientIndex[ingredientKey] || {}
+      const displayName = ingredientMeta.displayName || humanizeKey_(ingredientKey)
+      const tag = normalizeShoppingTag_(ingredientMeta.shoppingTag || 'Daily')
+      const targetDate = tag === 'Weekly' ? addDays_(targetWeekStart, -1) : mealDate
+      const aggregateKey = [targetDate, tag, ingredientKey].join('|')
+      if (!aggregates[aggregateKey]) {
+        aggregates[aggregateKey] = {
+          date: targetDate,
+          ingredient: displayName,
+          category: ingredientMeta.category || 'Other',
+          unit: ingredient.unit || ingredientMeta.defaultUnit || '',
+          tag: tag,
+          quantity: 0,
+        }
+      }
+      aggregates[aggregateKey].quantity += asNumber_(ingredient.qty) * scale
+    })
+  })
+
+  const generatedRows = Object.keys(aggregates).map(function(key) {
+    const item = aggregates[key]
+    const display = formatQuantity_(item.quantity, item.unit)
+    const preservedItem = preserved[[item.date, item.tag, item.ingredient].join('|')] || {}
+    return buildShoppingSheetRow_(shoppingContext.meta.headers, {
+      date: item.date,
+      ingredient: item.ingredient,
+      category: item.category,
+      quantity: display.label,
+      unit: display.unit,
+      tag: item.tag,
+      checked: preservedItem.checked || 'No',
+      shopper: preservedItem.shopper || (item.tag === 'Weekly' ? 'Shopper A' : 'Shopper B'),
+      notes: preservedItem.notes || '',
+    })
+  }).sort(compareShoppingRows_)
+
+  const rowsToKeep = shoppingContext.rows.filter(function(row) {
+    const rowDate = normalizeDateInput_(readCell_(shoppingContext.meta, row, ['Date']))
+    return rowDate < scopeStart || rowDate > scopeEnd
+  }).map(function(row) { return row.values.slice() })
+
+  rewriteSheetData_(shoppingContext.meta.sheet, shoppingContext.meta.headers, rowsToKeep.concat(generatedRows))
+  return { success: true, weekStart: targetWeekStart, itemsGenerated: generatedRows.length }
+}
+
+function loadRecipeCatalog_() {
+  const context = getSheetRows_(SHEET_NAMES.recipeMaster)
+  const recipes = context.rows.map(function(row) {
+    return buildRecipeObject_(context.meta, row)
+  }).filter(function(recipe) {
+    return !!recipe.id
+  })
+  const index = {}
+  recipes.forEach(function(recipe) { index[recipe.id] = recipe })
+  return { recipes: recipes, index: index }
+}
+
+function loadIngredientIndex_() {
+  const context = getSheetRows_(SHEET_NAMES.ingredientDb, true)
+  if (!context) return {}
+  const index = {}
+  context.rows.forEach(function(row) {
+    const key = asString_(readCell_(context.meta, row, ['Ingredient Key']))
+    if (!key) return
+    index[key] = {
+      displayName: asString_(readCell_(context.meta, row, ['Display Name'])),
+      category: asString_(readCell_(context.meta, row, ['Category'])) || 'Other',
+      defaultUnit: asString_(readCell_(context.meta, row, ['Default Unit'])),
+      shoppingTag: normalizeShoppingTag_(readCell_(context.meta, row, ['Shopping Tag'])),
+      notes: asString_(readCell_(context.meta, row, ['Notes'])),
+    }
+  })
+  return index
+}
+
+function buildRecipeObject_(meta, row) {
+  return {
+    id: asString_(readCell_(meta, row, ['Recipe ID'])),
+    name: asString_(readCell_(meta, row, ['Name'])),
+    category: asString_(readCell_(meta, row, ['Category'])),
+    cuisine: asString_(readCell_(meta, row, ['Cuisine'])),
+    prepTime: asNumber_(readCell_(meta, row, ['Prep Time'])),
+    cookTime: asNumber_(readCell_(meta, row, ['Cook Time'])),
+    difficulty: asString_(readCell_(meta, row, ['Difficulty'])),
+    tags: splitCsv_(readCell_(meta, row, ['Tags'])),
+    season: (asString_(readCell_(meta, row, ['Season'])) || 'all').toLowerCase(),
+    kidFriendly: asBool_(readCell_(meta, row, ['Kid Friendly'])),
+    pickyOk: asBool_(readCell_(meta, row, ['Picky OK'])),
+    calories: asNumber_(readCell_(meta, row, ['Calories'])),
+    carbs: asNumber_(readCell_(meta, row, ['Carbs'])),
+    protein: asNumber_(readCell_(meta, row, ['Protein'])),
+    fat: asNumber_(readCell_(meta, row, ['Fat'])),
+    fiber: asNumber_(readCell_(meta, row, ['Fiber'])),
+    baseServings: asNumber_(readCell_(meta, row, ['Base Servings'])) || 1,
+    ingredients: parseIngredients_(readCell_(meta, row, ['Ingredients (JSON)'])),
+    method: asString_(readCell_(meta, row, ['Method'])),
+    pickyModifier: asString_(readCell_(meta, row, ['Picky Modifier'])),
+    notes: asString_(readCell_(meta, row, ['Notes'])),
+  }
+}
+
+function buildMealObject_(meta, row, recipe) {
+  const portions = {}
+  const portionFields = {
+    muhtasim: ['Muhtasim Portion'],
+    adults: ['Adults Portion'],
+    teens: ['Teens Portion'],
+    kids: ['Kids Portion'],
+  }
+  Object.keys(portionFields).forEach(function(key) {
+    const value = asString_(readCell_(meta, row, portionFields[key]))
+    if (value) portions[key] = value
+  })
 
   return {
-    totalRecipes: recipes.length,
-    familySize: family.length,
-    thisWeekMeals: thisWeek.length,
-    shoppingItems: shopping.length,
-    shoppingChecked: shopping.filter(s => s.checked === 'Yes').length,
-    recipesByCategory: {
-      breakfast: recipes.filter(r => r.category === 'Breakfast').length,
-      lunch: recipes.filter(r => r.category === 'Lunch').length,
-      dinner: recipes.filter(r => r.category === 'Dinner').length,
-      snack: recipes.filter(r => r.category === 'Snack').length
-    },
-    kidFriendlyRecipes: recipes.filter(r => r.kidFriendly === 'Yes').length
-  };
+    slot: asString_(readCell_(meta, row, ['Meal Slot'])),
+    recipeId: recipe.id,
+    recipeName: recipe.name,
+    cookScaledFor: asNumber_(readCell_(meta, row, ['Cook Scaled For'])) || recipe.baseServings || 1,
+    calories: recipe.calories,
+    carbs: recipe.carbs,
+    protein: recipe.protein,
+    fat: recipe.fat,
+    fiber: recipe.fiber,
+    portions: Object.keys(portions).length > 0 ? portions : null,
+    pickyModifier: asString_(readCell_(meta, row, ['Picky Modifier'])) || recipe.pickyModifier || '',
+    kitchenNotes: asString_(readCell_(meta, row, ['Kitchen Notes'])),
+    assignedCook: asString_(readCell_(meta, row, ['Assigned Cook'])),
+  }
 }
 
-// ============================================================
-// GENERATE SHOPPING LIST (from MealPlan)
-// ============================================================
-function generateShoppingList(weekStart) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const plan = getMealPlan({ weekStart: weekStart });
-  const ingredientDB = sheetToObjects(SHEET_NAMES.ingredients);
-  const family = getFamily();
+function validateMealPlanRows_(meta, rows, recipeIndex) {
+  const missing = []
+  rows.forEach(function(row) {
+    const recipeId = asString_(readCell_(meta, row, ['Recipe ID']))
+    if (!recipeId || !recipeIndex[recipeId]) {
+      missing.push('row ' + row.rowNumber + ' (' + (recipeId || 'blank') + ')')
+    }
+  })
+  if (missing.length > 0) {
+    throw new Error('MealPlan references missing RecipeMaster IDs: ' + missing.join(', '))
+  }
+}
 
-  // Aggregate ingredients across all meals
-  const agg = {};
+function buildMealPlanSheetRow_(headers, payload) {
+  return headers.map(function(header) {
+    const normalized = normalizeHeader_(header)
+    if (normalized === 'date') return payload.date
+    if (normalized === 'day') return payload.day
+    if (normalized === 'mealslot') return payload.meal.slot || ''
+    if (normalized === 'recipeid') return payload.recipe.id
+    if (normalized === 'recipenameauto') return payload.recipe.name
+    if (normalized === 'cookscaledfor') return payload.meal.cookScaledFor || payload.recipe.baseServings || 1
+    if (normalized === 'muhtasimportion') return getPortion_(payload.meal, 'muhtasim')
+    if (normalized === 'adultsportion') return getPortion_(payload.meal, 'adults')
+    if (normalized === 'teensportion') return getPortion_(payload.meal, 'teens')
+    if (normalized === 'kidsportion') return getPortion_(payload.meal, 'kids')
+    if (normalized === 'pickymodifier') return payload.meal.pickyModifier || payload.recipe.pickyModifier || ''
+    if (normalized === 'kitchennotes') return payload.meal.kitchenNotes || ''
+    if (normalized === 'assignedcook') return payload.meal.assignedCook || ''
+    return ''
+  })
+}
 
-  plan.days.forEach(day => {
-    day.meals.forEach(meal => {
-      const recipe = getRecipeById(meal.recipeId);
-      if (recipe.error || !recipe.ingredients) return;
+function buildShoppingSheetRow_(headers, item) {
+  return headers.map(function(header) {
+    const normalized = normalizeHeader_(header)
+    if (normalized === 'date') return item.date
+    if (normalized === 'ingredient') return item.ingredient
+    if (normalized === 'category') return item.category
+    if (normalized === 'quantity') return item.quantity
+    if (normalized === 'unit') return item.unit
+    if (normalized === 'shoppingtag') return item.tag
+    if (normalized === 'checked') return item.checked
+    if (normalized === 'shopper') return item.shopper
+    if (normalized === 'notes') return item.notes
+    return ''
+  })
+}
 
-      const scale = meal.cookScaledFor || family.count;
+function filterShoppingRows_(context, date, scopeStart, scopeEnd) {
+  return context.rows.map(function(row) {
+    const rowDate = normalizeDateInput_(readCell_(context.meta, row, ['Date']))
+    return {
+      row: row.rowNumber,
+      date: rowDate,
+      ingredient: asString_(readCell_(context.meta, row, ['Ingredient'])),
+      category: asString_(readCell_(context.meta, row, ['Category'])) || 'Other',
+      quantity: asString_(readCell_(context.meta, row, ['Quantity'])),
+      unit: asString_(readCell_(context.meta, row, ['Unit'])),
+      tag: normalizeShoppingTag_(readCell_(context.meta, row, ['Shopping Tag'])),
+      checked: asBool_(readCell_(context.meta, row, ['Checked?'])),
+      shopper: asString_(readCell_(context.meta, row, ['Shopper'])),
+      notes: asString_(readCell_(context.meta, row, ['Notes'])),
+    }
+  }).filter(function(item) {
+    if (date) return item.date === date
+    return item.date >= scopeStart && item.date <= scopeEnd
+  })
+}
 
-      recipe.ingredients.forEach(ing => {
-        const key = ing.key;
-        if (!agg[key]) {
-          // Look up ingredient info from DB
-          const dbEntry = ingredientDB.find(i => i.ingredientKey === key);
-          agg[key] = {
-            name: dbEntry ? dbEntry.displayName : key,
-            category: dbEntry ? dbEntry.category : 'Other',
-            unit: ing.unit || (dbEntry ? dbEntry.defaultUnit : ''),
-            tag: dbEntry ? dbEntry.shoppingTag : 'Daily',
-            totalQty: 0
-          };
-        }
-        agg[key].totalQty += ing.qty * scale;
-      });
-    });
-  });
+function compareMeals_(a, b) {
+  const left = SLOT_ORDER[a.slot] || 99
+  const right = SLOT_ORDER[b.slot] || 99
+  if (left !== right) return left - right
+  return String(a.recipeName || '').localeCompare(String(b.recipeName || ''))
+}
 
-  // Write to ShoppingList sheet
-  const ws = ss.getSheetByName(SHEET_NAMES.shopping);
-  // Clear existing data (keep header)
-  const lastRow = ws.getLastRow();
+function compareShoppingRows_(a, b) {
+  if (a[0] !== b[0]) return String(a[0]).localeCompare(String(b[0]))
+  if (a[2] !== b[2]) return String(a[2]).localeCompare(String(b[2]))
+  return String(a[1]).localeCompare(String(b[1]))
+}
+
+function rewriteSheetData_(sheet, headers, rows) {
+  const lastRow = sheet.getLastRow()
+  const lastCol = Math.max(sheet.getLastColumn(), headers.length)
   if (lastRow > 1) {
-    ws.getRange(2, 1, lastRow - 1, 9).clearContent();
+    sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent()
+  }
+  if (rows.length > 0) {
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows)
+  }
+}
+
+function getSheetRows_(sheetName, allowMissing) {
+  const meta = getSheetMeta_(sheetName, allowMissing)
+  if (!meta) return null
+  if (meta.sheet.getLastRow() < 2) return { meta: meta, rows: [] }
+
+  const values = meta.sheet.getRange(2, 1, meta.sheet.getLastRow() - 1, meta.sheet.getLastColumn()).getValues()
+  const rows = []
+  values.forEach(function(rowValues, index) {
+    if (rowHasData_(rowValues)) {
+      rows.push({ rowNumber: index + 2, values: rowValues })
+    }
+  })
+  return { meta: meta, rows: rows }
+}
+
+function getSheetMeta_(sheetName, allowMissing) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName)
+  if (!sheet) {
+    if (allowMissing) return null
+    throw new Error('Missing sheet: ' + sheetName)
   }
 
-  // Write aggregated items
-  let row = 2;
-  Object.keys(agg).sort((a, b) => agg[a].category.localeCompare(agg[b].category)).forEach(key => {
-    const item = agg[key];
-    const qty = Math.ceil(item.totalQty * 10) / 10; // Round up
-    ws.getRange(row, 1).setValue(weekStart);
-    ws.getRange(row, 2).setValue(item.name);
-    ws.getRange(row, 3).setValue(item.category);
-    ws.getRange(row, 4).setValue(formatQuantity(qty, item.unit));
-    ws.getRange(row, 5).setValue(item.unit);
-    ws.getRange(row, 6).setValue(item.tag);
-    ws.getRange(row, 7).setValue('No');
-    ws.getRange(row, 8).setValue(item.tag === 'Daily' ? 'Shopper B' : 'Shopper A');
-    row++;
-  });
-
-  return {
-    success: true,
-    itemsGenerated: Object.keys(agg).length,
-    weekStart: weekStart
-  };
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+  const headerMap = {}
+  headers.forEach(function(header, index) {
+    headerMap[normalizeHeader_(header)] = index
+  })
+  return { sheet: sheet, headers: headers, headerMap: headerMap }
 }
 
-function formatQuantity(qty, unit) {
-  if (unit === 'g' && qty >= 1000) return (qty / 1000).toFixed(1) + ' kg';
-  if (unit === 'ml' && qty >= 1000) return (qty / 1000).toFixed(1) + ' L';
-  return qty + ' ' + unit;
+function getColumnIndex_(meta, aliases, required) {
+  for (let i = 0; i < aliases.length; i += 1) {
+    const normalized = normalizeHeader_(aliases[i])
+    if (normalized in meta.headerMap) return meta.headerMap[normalized] + 1
+  }
+  if (required) throw new Error('Missing required column: ' + aliases[0])
+  return 0
+}
+
+function readCell_(meta, row, aliases) {
+  const column = getColumnIndex_(meta, aliases, false)
+  if (!column) return ''
+  return row.values[column - 1]
+}
+
+function parseIngredients_(value) {
+  const source = asString_(value)
+  if (!source) return []
+  try {
+    const parsed = JSON.parse(source)
+    if (Array.isArray(parsed)) {
+      return parsed.map(function(item) {
+        return { key: asString_(item.key), qty: asNumber_(item.qty), unit: asString_(item.unit) }
+      })
+    }
+  } catch (err) {
+    // Fall back to legacy CSV format.
+  }
+
+  return source.split(',').map(function(item) {
+    const parts = item.trim().split(':')
+    return { key: asString_(parts[0]), qty: asNumber_(parts[1]), unit: asString_(parts[2]) }
+  }).filter(function(item) {
+    return !!item.key
+  })
+}
+
+function formatQuantity_(quantity, unit) {
+  let value = asNumber_(quantity)
+  let outputUnit = asString_(unit)
+  if (outputUnit === 'g' && value >= 1000) {
+    value = value / 1000
+    outputUnit = 'kg'
+  } else if (outputUnit === 'ml' && value >= 1000) {
+    value = value / 1000
+    outputUnit = 'L'
+  }
+  value = roundQuantity_(value)
+  return {
+    label: outputUnit ? formatNumber_(value) + ' ' + outputUnit : formatNumber_(value),
+    unit: outputUnit,
+  }
+}
+
+function roundQuantity_(value) {
+  if (value >= 10) return Math.round(value * 10) / 10
+  return Math.round(value * 100) / 100
+}
+
+function formatNumber_(value) {
+  const text = String(value)
+  if (text.indexOf('.') < 0) return text
+  return text.replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1')
+}
+
+function splitCsv_(value) {
+  return asString_(value).split(',').map(function(item) {
+    return item.trim()
+  }).filter(function(item) {
+    return !!item
+  })
+}
+
+function getPortion_(meal, key) {
+  return meal && meal.portions && meal.portions[key] ? meal.portions[key] : ''
+}
+
+function humanizeKey_(value) {
+  return asString_(value).replace(/_/g, ' ')
+}
+
+function normalizeShoppingTag_(value) {
+  return String(value || '').toLowerCase() === 'weekly' ? 'Weekly' : 'Daily'
+}
+
+function normalizeHeader_(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
+function getParam_(event, key, fallbackValue) {
+  return event && event.parameter && event.parameter[key] ? event.parameter[key] : fallbackValue
+}
+
+function rowHasData_(values) {
+  for (let index = 0; index < values.length; index += 1) {
+    if (values[index] !== '' && values[index] !== null && values[index] !== undefined) return true
+  }
+  return false
+}
+
+function jsonOutput_(payload) {
+  return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON)
+}
+
+function asString_(value) {
+  if (value === null || value === undefined) return ''
+  if (value instanceof Date) return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+  return String(value).trim()
+}
+
+function asNumber_(value) {
+  const number = Number(value)
+  return isNaN(number) ? 0 : number
+}
+
+function asBool_(value) {
+  if (value === true || value === 1) return true
+  const text = String(value || '').toLowerCase()
+  return text === 'true' || text === 'yes' || text === '1'
+}
+
+function normalizeDateInput_(value, allowBlank) {
+  if (!value) {
+    if (allowBlank) return ''
+    throw new Error('A valid YYYY-MM-DD date is required.')
+  }
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+  }
+  const text = String(value).trim()
+  if (!text) {
+    if (allowBlank) return ''
+    throw new Error('A valid YYYY-MM-DD date is required.')
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text
+  const parsed = new Date(text)
+  if (!isNaN(parsed.getTime())) {
+    return Utilities.formatDate(parsed, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+  }
+  throw new Error('Invalid date: ' + text)
+}
+
+function todayIso_() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd')
+}
+
+function getCurrentWeekStart_() {
+  return getWeekStartForDate_(todayIso_())
+}
+
+function getWeekStartForDate_(date) {
+  const value = new Date(date + 'T00:00:00')
+  const day = value.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  value.setDate(value.getDate() + diff)
+  return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+}
+
+function addDays_(date, offset) {
+  const value = new Date(normalizeDateInput_(date) + 'T00:00:00')
+  value.setDate(value.getDate() + offset)
+  return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+}
+
+function getDayName_(date) {
+  const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+  const value = new Date(normalizeDateInput_(date) + 'T00:00:00')
+  return names[value.getDay()]
+}
+
+function toMinutes_(value) {
+  if (!value) return 9999
+  const match = String(value).match(/(\d+):(\d+)\s*(AM|PM)/i)
+  if (!match) return 9999
+  let hour = Number(match[1])
+  const minute = Number(match[2])
+  const meridiem = match[3].toUpperCase()
+  if (meridiem === 'PM' && hour !== 12) hour += 12
+  if (meridiem === 'AM' && hour === 12) hour = 0
+  return hour * 60 + minute
 }
